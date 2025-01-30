@@ -1,0 +1,428 @@
+---
+title: "RNASeq downstream"
+author: "Ankitha"
+date: "2024-12-05"
+output: html_document
+---
+#Install packages
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#install pasilla package
+if (!require("BiocManager", quietly = TRUE))
+install.packages("BiocManager")
+BiocManager::install("pasilla")
+```
+#hcnechhj
+#Load libraries
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+library("pasilla")
+library("DESeq2")
+library("ggplot2")
+library("ggpubr")
+library("rio")
+library("dplyr")
+library("clusterProfiler")
+library("org.Mm.eg.db")
+library("AnnotationDbi")
+library("ggrepel")
+library("grid")
+library("rio")
+```
+
+#Load functions
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#Perform the pairwise analysis, print number of differently expressed genes and convert result into a data frame
+run_pairwise_analysis <- function(contrast,comparison_name,padj_threshold=0.05){
+  #Perform the comparison between the groups specified in the contrast.
+  res <- results(dds, contrast = contrast)
+  
+  # Generate MA plot
+  plotMA(res, main = paste("MA Plot -", comparison_name))
+  
+  #converting the result into a dataframe and adding the gene name, by calling the gene name function
+  result_dataframe <- add_gene_names(res)
+  
+  #Number of differently expressed gene
+  print(comparison_name)
+  num_de_genes <- sum(res$padj < padj_threshold, na.rm = TRUE)
+  print(paste("Total number of differentially expressed genes:", num_de_genes))
+  print(summary(res, alpha = padj_threshold))
+  
+  return(result_dataframe)
+}
+
+#retrieving the gene name from the ensembl ID
+add_gene_names <- function(res) {
+  gene_names <- mapIds(
+    org.Mm.eg.db,
+    keys = rownames(res),
+    column = "SYMBOL",
+    keytype = "ENSEMBL",
+    multiVals = "first"
+  )
+  # Adding the column GeneName
+  res <- as.data.frame(res)
+  res$GeneName <- gene_names
+  return(res)
+}
+
+#Make volcano plot
+generating_volcano_plot <- function(DE_result,comparison_name,padj_threshold=0.05,logfc_threshold=1){
+  # Adding the column expression to the dataframe
+  DE_result <- DE_result %>%
+    mutate(
+      Expression = case_when(
+        log2FoldChange >= logfc_threshold & padj <= padj_threshold ~ "Up-regulated",
+        log2FoldChange <= -logfc_threshold & padj <= padj_threshold ~ "Down-regulated",
+        TRUE ~ "Unchanged"
+      )
+    )
+
+  # Generate the volcano_plot
+  volcano_plot <- ggplot(DE_result, aes(log2FoldChange, -log(pvalue, 10))) + # -log10 conversion
+    geom_point(aes(color = Expression), size = 2/5) +
+    xlab(expression("log"[2]*"FC")) +
+    ylab(expression("-log"[10]*"P-Value")) +
+    scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) +
+    xlim(-10, 10) +
+    ggtitle(paste("Volcano Plot -", comparison_name))
+  
+  print(volcano_plot)
+}
+
+#Print the top 10 most upregulated and downregulated genes, with their gene names
+print_top_10_genes <- function(DE_result, comparison_name, logfc_threshold=1) {
+  # Filter for genes with significant fold change (up-regulated and down-regulated)
+  upregulated_genes <- DE_result[DE_result$log2FoldChange >= logfc_threshold & DE_result$padj <= 0.05, ]
+  downregulated_genes <- DE_result[DE_result$log2FoldChange <= -logfc_threshold & DE_result$padj <= 0.05, ]
+  
+  # Get the top 10 most upregulated genes
+  top_upregulated <- upregulated_genes[order(upregulated_genes$log2FoldChange, decreasing = TRUE), ]
+  top_upregulated <- head(top_upregulated, 10)
+  
+  # Get the top 10 most downregulated genes 
+  top_downregulated <- downregulated_genes[order(downregulated_genes$log2FoldChange), ]
+  top_downregulated <- head(top_downregulated, 10)
+  
+  # Print the results
+  print(paste("Top 10 upregulated genes -", comparison_name))
+  print(top_upregulated[, c("GeneName", "log2FoldChange", "padj")])
+  
+  print(paste("Top 10 downregulated genes -", comparison_name))
+  print(top_downregulated[, c("GeneName", "log2FoldChange", "padj")])
+}
+
+#GO analysis
+run_go_analysis_pairwise <- function(DE_result,comparaison_name,ont,regulation="all",show_Category=10){
+  
+  ontology_list = list("BP"="Biological Processes","CC"="Cellular Component","MF"="Molecular Function")
+  ontology = ontology_list[ont] 
+  
+  # Filter based on regulation type: "up", "down", or "all"
+  if (regulation == "up") {
+    # Upregulated genes: log2FoldChange >= 1 (1) and padj <= 0.05
+    genes_de <- rownames(DE_result[DE_result$log2FoldChange >= 1 & DE_result$padj <= 0.05, ])
+  } else if (regulation == "down") {
+    # Downregulated genes: log2FoldChange <= -1 (1) and padj <= 0.05
+    genes_de <- rownames(DE_result[DE_result$log2FoldChange <= -1 & DE_result$padj <= 0.05, ])
+  } else {
+    # All genes with padj <= 0.05
+    genes_de <- rownames(DE_result[DE_result$padj <= 0.05 & !is.na(DE_result$padj), ])
+  }
+  
+  # List of all genes measured in the analysis
+  genes_universe <- rownames(DE_result)
+  
+  # Perform the GO analysis using enrichGO
+  go_results <- enrichGO(
+    gene = genes_de,
+    universe = genes_universe,
+    OrgDb = org.Mm.eg.db,
+    ont = ont,
+    keyType = "ENSEMBL",
+    pAdjustMethod = "BH", #Adjust p-values using the Benjamin-Hochberg method
+    pvalueCutoff = 0.05,
+    qvalueCutoff = 0.05 #accept that 5% of tests found to be stats signif will be FP, FDR
+  )
+  
+  #get simplified terms
+  simplified_ego <- simplify(go_results)
+
+  #set gradient colours for plots
+  options(enrichplot.colours = c("orange","purple"))
+  
+  # Create a dotplot for GO terms
+  title= paste(ontology)
+  dot_plot <- dotplot(simplified_ego, title =title,font.size = 20,showCategory =show_Category, color = "p.adjust")+
+    theme_bw()
+  print(dot_plot)
+}
+```
+
+#Load and clean data
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#load data, row.names: sets the first col as row names 
+data_count <- read.delim("gene_count.txt", header = T, row.names = 1)
+
+#clean column names to just have the sample names
+colnames(data_count) <- gsub(".*mapping\\.|sorted.bam.*", "", colnames(data_count))
+#remove chr, start, end, strand, and length columns
+data_count <- data_count[ -c(1:5) ]
+
+#load group data
+data_col <- read.csv("Samples.csv", header = T, row.names = 1)
+data_col$Tissue <- as.factor(data_col$Tissue)
+data_col$Treatment <- as.factor(data_col$Treatment) #sets groups as categorical variables
+
+#check if rows from group data and columns from the feature counts are the same
+#it is important that the rows in group data and columns in count matrix refer to the same groups, as DESeq2 does not make guesses
+all(rownames(data_col) == colnames(data_count))
+```
+
+#Create DESeq dataset
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#load group data
+data_col <- read.csv("Groups.csv", header = T, row.names = 1)
+data_col$Group <- as.factor(data_col$Group) #sets groups as categorical variables
+
+#check if rows and col are the same
+all(rownames(data_col) == colnames(data_count))
+
+#reverse the levels for control !!!!! do we need to do this 
+#data frame for anaylsis 
+dds <- DESeqDataSetFromMatrix(countData = data_count,
+                              colData = data_col,
+                              design = ~ Group)
+
+result_DEseq <- DESeq(dds)
+res <- results(result_DEseq)
+res
+
+#remove dependence of variance on mean, to stabilise the variance across gene counts
+#This ensure more accurate results
+result_DEseq_vst <- vst(result_DEseq, blind = TRUE)
+```
+#PCA plot
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+plotPCA(result_DEseq_vst, intgroup = "Group") +
+  theme_bw() +
+  scale_color_manual(name = "Groups",
+                     labels = c("Blood WT Infected", "Blood WT Uninfected", "Lung WT Infected", "Lung WT Uninfected"), 
+                     values = c("#DE2820", "#E57259", "#2062DE", "#7CA2E9"))
+
+
+```
+
+#Heatmap
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#Heatmap distances between samples
+sampleDists <- dist(t(assay(result_DEseq_nodep)))
+library("RColorBrewer")
+library("pheatmap")
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(result_DEseq_nodep$Tissue, result_DEseq_nodep$Treatment, sep="-")
+colnames(sampleDistMatrix) <- rownames(sampleDistMatrix)
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+#Pairwise comparisons
+##Lung case vs control
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#Lung case vs control 
+comparaison_name = "Lung case v control"
+dds <- DESeq(dds)
+#MA plot
+df_lung_case_control <- run_pairwise_analysis(c("Group", "Lung_WT_Case", "Lung_WT_Control"), comparaison_name, padj_threshold=0.05)
+
+#export df to excel 
+tmp_file <- "/Users/ankithak/Documents/04 Bern/01 UniBe/06 RNA seq/rnaseq_downstream/DE_lung_gs.xlsx"
+df <- df_lung_case_control %>%
+  tibble::rownames_to_column(var = "Gene_ID")
+export(df, tmp_file)
+#volcano plot, only genes that are significantly differentially expressed are coloured 
+generating_volcano_plot(df_lung_case_control,comparaison_name,padj_threshold=0.05,logfc_threshold=log(2)) 
+
+#gene names 
+filter_comparison = df_lung_case_control[df_lung_case_control$GeneName %in% genes_article,c("log2FoldChange","pvalue","GeneName")]
+print(filter_comparison)
+
+#top 10 genes
+print_top_10_genes(df_lung_case_control,comparaison_name)
+
+plot_themes <- theme(axis.text.x= element_text(colour = "black", size = 12),
+              axis.text.y= element_text(colour = "black", size = 12),
+              axis.title=element_text(colour = "black", size=14),
+              plot.title = element_text(colour = "black", face="bold"),
+              legend.text = element_text(colour = "black", size = 10),
+              legend.title = element_text(colour = "black", size = 12, face = "bold"))
+
+#GO analysis
+#All
+#Biological process
+BP_all <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="BP",regulation = "all")
+p1 <- BP_all + plot_themes
+#Molecular function
+MF_all <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="MF",regulation = "all")
+p2 <- MF_all + plot_themes
+#Cellular component
+CC_all <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="CC",regulation = "all")
+p3 <- CC_all + plot_themes
+
+ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+
+#upregulated genes
+#Biological process
+BP_up <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="BP",regulation = "up")
+p1 <- BP_up + plot_themes
+#Molecular function
+MF_up <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="MF",regulation = "up")
+p2 <- MF_up + plot_themes
+#Cellular component
+CC_up <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="CC",regulation = "up")
+p3 <- CC_up + plot_themes
+
+ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+
+#downregulated genes
+#Biological process
+BP_down <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="BP",regulation = "down")
+p1 <- BP_down + plot_themes
+#Molecular function
+MF_down <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="MF",regulation = "down")
+p2 <- MF_down + plot_themes
+#Cellular component
+CC_down <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="CC",regulation = "down")
+p3 <- CC_down + plot_themes
+
+ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+
+```
+
+#ALL ANALYSIS
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#GO analysis
+#All
+#Biological process
+BP_all <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="BP",regulation = "all")
+p1 <- BP_all + plot_themes
+#Molecular function
+MF_all <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="MF",regulation = "all")
+p2 <- MF_all + plot_themes
+#Cellular component
+CC_all <- run_go_analysis_pairwise(df_lung_case_control,comparaison_name,ont="CC",regulation = "all")
+p3 <- CC_all + plot_themes
+
+ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+
+#G set analysis
+
+d <- read.csv("DE_lung_gsea.csv")
+## feature 1: numeric vector
+geneList = d[,2]
+
+## feature 2: named vector
+names(geneList) = as.character(d[,1])
+
+## feature 3: decreasing orde
+geneList = sort(geneList, decreasing = TRUE)
+
+ego3 <- gseGO(geneList     = geneList,
+              OrgDb        = org.Mm.eg.db,
+              ont          = "CC",
+              keyType = "ENSEMBL",
+              minGSSize    = 100,
+              maxGSSize    = 500,
+              pvalueCutoff = 0.05,
+              verbose      = FALSE)
+
+gset_BP <- dotplot(ego3, showCategory = 10, title = "Biological process")
+p1 <- gset_BP + plot_themes
+gset_MF <- dotplot(ego3, showCategory = 10, title = "Molecular function")
+p2 <- gset_MF + plot_themes
+gset_CC <- dotplot(ego3, showCategory = 10, title = "Cellular component")
+p3 <- gset_CC + plot_themes
+
+ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+
+```
+
+##Volcano plot with annotations
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+#Lung case vs control 
+comparaison_name = "Lung case v control"
+dds <- DESeq(dds)
+
+#MA plot
+df_lung_case_control <- run_pairwise_analysis(c("Group", "Lung_WT_Case", "Lung_WT_Control"), comparaison_name, padj_threshold=0.05)
+#volcano plot, only genes that are significantly differentially expressed are coloured 
+plot <- generating_volcano_plot(df_lung_case_control,comparaison_name,padj_threshold=0.05,logfc_threshold=log(2)) 
+# Sort by significance and select top 10 genes
+top_genes <- df_lung_case_control[order(df_lung_case_control$padj), ][1:10, ]
+plot + geom_text_repel(
+    data = top_genes,
+    aes(label = GeneName),
+    box.padding = 0.5,
+    max.overlaps = Inf,
+    size = 3,
+    color = "black"
+  )
+
+
+
+
+```
+
+##other GO graphs
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+library(DOSE)
+library(enrichplot)
+library(clusterProfiler)
+
+#de genes
+#All genes with padj <= 0.05
+genes_de <- rownames(df_lung_case_control[df_lung_case_control$padj <= 0.05 & !is.na(df_lung_case_control$padj), ])
+
+genes_up <- rownames(df_lung_case_control[df_lung_case_control$log2FoldChange >= log(2) & df_lung_case_control$padj <= 0.05, ])
+
+genes_universe <- rownames(df_lung_case_control)
+gene.df <- bitr(df_lung_case_control, fromType = "ENTREZID",
+        toType = c("ENSEMBL", "SYMBOL"),
+        OrgDb = org.Mm.eg.db)
+
+ego <- enrichGO(gene          = genes_up,
+                universe      = rownames(df_lung_case_control),
+                OrgDb         = org.Mm.eg.db,
+                keyType       = "ENSEMBL",
+                ont           = "BP",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.2,
+                readable = TRUE)
+head(ego)
+# Now plot
+dotplot(ego, showCategory = 10, color = "p.adjust")
+# Reduce the number of terms by sorting based on significance and selecting top terms
+BiocManager::install("simplifyEnrichment")
+library(simplifyEnrichment)
+egox <- setReadable(ego, 'org.Mm.eg.db', 'ENTREZID')
+#ego_subset <- subset_enrichResult(ego, 5)  # Select top 5 GO terms
+#class(ego_subset)
+cnetplot(egox, showCategory = 5, layout = "circle")  # Display top 5 terms
+heatplot(egox, showCategory=5)
+
+```
+
+#gene names
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+
+genes_article <- c("Unc93b1", "Slamf7", "Ms4a6b", "Ms4a6c", "Trim30a", "Pml", 
+           "Ms4a4c", "Sp100", "Oas1g", "Mx1", "Oas3", "Zbp1", "Oas2", 
+           "Mb21d1", "Phf11d", "Dhx58", "Phf11a", "Irf9", "Lgals9", 
+           "Usp18", "Lair1", "Irf7", "Phf11b", "Xaf1", "Eif2ak2", 
+           "Rsad2", "Gm4955", "Fcgr1", "Ifit3", "Siglec1", "Aif1", 
+           "Ifit1", "Oas1a", "Oasl2", "Rtp4", "Gm5431", "Rnf213", 
+           "Ifih1", "Oasl1", "Apobec1", "Lst1", "Adap1", "Grn", 
+           "Epsti1", "Ddx60", "Apol9a", "Trim30d", "Dck")
+```
