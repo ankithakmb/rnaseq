@@ -7,7 +7,7 @@
 #SBATCH --error=/data/users/rkumble/rnaseq_course/log/04_hisat_index_%J.err
 #SBATCH --partition=pibu_el8
 
-#Variables
+#Variables 
 WORKDIR="/data/users/${USER}/rnaseq_course/"
 REFGENDIR="$WORKDIR/reference_genome"
 LOGDIR="$WORKDIR/log"
