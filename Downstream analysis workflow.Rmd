@@ -71,7 +71,7 @@ add_gene_names <- function(res) {
   return(res)
 }
 
-#Make volcano plot
+#Yolcano plot
 generating_volcano_plot <- function(DE_result,comparison_name,padj_threshold=0.05,logfc_threshold=2){
   # Adding the column expression to the dataframe
   DE_result <- DE_result %>%
@@ -322,7 +322,7 @@ ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
 
 ```
 
-##Gene set analysis
+##Gene set enrichment analysis
 ```{r, echo=FALSE,message=FALSE,warning=FALSE}
 d <- read.csv("DE_lung_forgsea.csv")
 
@@ -353,7 +353,7 @@ ego_mf <- gseGO(geneList     = geneList,
               maxGSSize    = 300,
               pvalueCutoff = 0.05,
               verbose      = FALSE)
-#Ceulluar compondent
+#Ceulluar component
 ego_cc <- gseGO(geneList     = geneList,
               OrgDb        = org.Mm.eg.db,
               ont          = "CC",
