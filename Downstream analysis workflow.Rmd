@@ -32,6 +32,7 @@ library("rio")
 library(DOSE)
 library(enrichplot)
 library(EnhancedVolcano)
+library("data.table")
 ```
 
 #Load functions
@@ -120,6 +121,21 @@ print_top_10_genes <- function(DE_result, comparison_name, logfc_threshold=2) {
   
   print(paste("Top 10 downregulated genes -", comparison_name))
   print(top_downregulated[, c("GeneName", "log2FoldChange", "padj")])
+}
+
+gene_boxplotter <- function (target_gene, gene_dataframe = expr_long, plot_title) {
+    target_gene_subset <- gene_dataframe[gene_dataframe$Gene == target_gene,]
+    
+    ggplot(target_gene_subset, aes(x = Group, y = Expression, fill = Group)) +
+      geom_boxplot() +
+      geom_point() +
+      scale_fill_manual(values = c("pink", "lightblue")) + 
+      scale_fill_discrete(labels = c("Infected lung", "Uninfected lung")) +
+      scale_x_discrete(labels = c("Infected lung", "Uninfected lung")) +
+      theme_bw() +
+      labs(y = "Expression Level") +
+      theme(legend.position = "none") +
+      ggtitle(paste("Gene name:", plot_title))
 }
 
 #GO analysis
@@ -302,6 +318,36 @@ print(filter_comparison)
 
 #top 10 genes
 print_top_10_genes(df_lung_case_control,comparaison_name)
+```
+
+##Boxplots of individual genes
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+result_DEseq_vst <- vst(result_DEseq, blind = TRUE)
+# Extract transformed expression matrix and convert to dataframe
+expr_data <- as.data.frame(assay(result_DEseq_vst))  
+
+#Add gene names as a column
+expr_data <- expr_data
+expr_data$Gene <- rownames(expr_data)  # Add gene names as a column
+
+#add sample names as a column
+datacol2 <- data_col
+datacol2$Sample <- rownames(data_col)
+
+expr_long <- melt(expr_data, id.vars = "Gene", variable.name = "Sample", value.name = "Expression")
+
+#add metadata columns and create a subset with only lung samples
+expr_long <- merge(expr_long, datacol2) 
+expr_long <- subset(expr_long, Group %in% c("Lung_WT_Case", "Lung_WT_Control"))
+
+#Generate boxplots
+p1 <- gene_boxplotter("ENSMUSG00000078853", plot_title = "Igtp") + plot_themes
+p2 <- gene_boxplotter("ENSMUSG00000034855", plot_title = "Cxcl10") + plot_themes
+p3 <- gene_boxplotter("ENSMUSG00000003379", plot_title = "Cd79a") + plot_themes +
+  theme(legend.position = "right")
+
+ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+
 ```
 
 ##Overrepresnation analysis
