@@ -30,7 +30,7 @@ SAMPLE=`awk -v line=$SLURM_ARRAY_TASK_ID 'NR==line{print $1; exit}' $SAMPLELIST`
 READ1=`awk -v line=$SLURM_ARRAY_TASK_ID 'NR==line{print $2; exit}' $SAMPLELIST`
 READ2=`awk -v line=$SLURM_ARRAY_TASK_ID 'NR==line{print $3; exit}' $SAMPLELIST`
 
-#run feature counts
+#run feature counts 
 #Q10 set minimum read quality to 10%, only reads with MAPQ score of ≥10 will be considered
 #T4 4 threads
 #-p specifies that input data is pair-end reads
