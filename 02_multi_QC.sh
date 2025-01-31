@@ -16,4 +16,4 @@ LOGDIR="$WORKDIR/log"
 mkdir -p $LOGDIR
 
 cd $FASTQCDIR
-apptainer exec --bind $FASTQCDIR /containers/apptainer/multiqc-1.19.sif multiqc $FASTQCDIR -n multiqc_report.html
+apptainer exec --bind $FASTQCDIR /containers/apptainer/multiqc-1.19.sif multiqc $FASTQCDIR -n multiqc_report.html 
