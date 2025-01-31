@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --time=2:00:00
 #SBATCH --mem=1g
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=1
 #SBATCH --job-name=fast_QC
 #SBATCH --output=/data/users/rkumble/rnaseq_course/log/01_fastQC_%J.out
 #SBATCH --error=/data/users/rkumble/rnaseq_course/log/01_fastQC_%J.err
