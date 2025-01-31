@@ -27,4 +27,4 @@ mkdir -p $OUTDIR
 cd $OUTDIR
 
 #run fastqc for both reads and put the result in outfile
-apptainer exec --bind /data /containers/apptainer/fastqc-0.12.1.sif fastqc -t 2 $READ1 $READ2 -o $OUTDIR
+apptainer exec --bind /data /containers/apptainer/fastqc-0.12.1.sif fastqc -t 2 $READ1 $READ2 -o $OUTDIR 
