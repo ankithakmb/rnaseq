@@ -17,7 +17,7 @@ INDEXDIR="$WORKDIR/index_hisat"
 SAMPLELIST="$WORKDIR/samplelist.tsv"
 OUTDIR=$WORKDIR/mapping
 
-#Create the directory for the error and output file
+#Create the directory for the error and output file 
 mkdir -p $LOGDIR
 
 mkdir -p $OUTDIR
