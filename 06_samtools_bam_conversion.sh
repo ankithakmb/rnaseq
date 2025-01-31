@@ -15,7 +15,7 @@ SAMPLELIST="$WORKDIR/samplelist.tsv"
 OUTDIR=$WORKDIR/mapping
 
 
-#Create the directory for the error and output file
+#Create the directory for the error and output file 
 mkdir -p $LOGDIR
 
 #take the sample name and path reads 1 & 2 per line
